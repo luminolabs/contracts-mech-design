@@ -1,0 +1,221 @@
+\documentclass{article}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{graphicx}
+% Define custom theorem-like environments
+\newtheorem{definition}{Definition}
+\newtheorem{problem}{Problem}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\title{Optimal Job Allocation for Decentralized Computing}
+
+\author{Juan P. Madrigal-Cianci\\ \texttt{juan@luminolabs.ai}}
+
+
+\begin{document}
+
+\maketitle
+
+
+\section{Formal Problem Statement}
+
+\begin{definition}[Job Scheduling Problem]
+Let $\mathcal{W} = \{1, 2, \dots, M\}$ denote a set of workers and $\mathcal{J} = \{1, 2, \dots, N\}$ denote a set of jobs. Each job $j \in \mathcal{J}$ is characterized by:
+\begin{itemize}
+    \item A budget $B_j \in \mathbb{R}^+$,
+    \item A load $L_j \in \mathbb{R}^+$.
+\end{itemize}
+Each worker $i \in \mathcal{W}$ is characterized by:
+\begin{itemize}
+    \item A capacity $K_i \in \mathbb{R}^+$,
+    \item A score $S_i \in [0, 1]$.
+    \item A \textit{bid} for job $j$ denoted by $b_{i,j}$. This can be understood as their \textit{willingness to sell} for this specific job.
+\end{itemize}
+Additionally, let $\beta > 0$ be a price coefficient and $\alpha \geq 0$ be a regularization weight.
+\end{definition}
+
+\begin{problem}[Optimal Assignment]\label{problem:optimal-assignment}
+Given the sets $\mathcal{W}$ and $\mathcal{J}$ and their associated parameters, find a binary assignment matrix $X = [x_{i,j}]_{M \times N}$, where $x_{i,j} \in \{0, 1\}$, that maximizes the utility function:
+\[
+U_{\text{protocol}}(X) = \sum_{i=1}^M \sum_{j=1}^N \left( \beta (B_j-p_{i,j}) - \alpha (1 - S_i)^2 \right) x_{i,j},
+\]
+subject to the following constraints:
+\begin{align}
+    \sum_{j=1}^N L_j x_{i,j} &\leq K_i, & \forall i \in \mathcal{W}, \label{eq:capacity} \\
+    \sum_{i=1}^M x_{i,j} &\leq 1, & \forall j \in \mathcal{J}, \label{eq:assignment} \\
+    x_{i,j} &\in \{0, 1\}, & \forall (i, j) \in \mathcal{W} \times \mathcal{J}. \label{eq:binary}
+\end{align}
+\end{problem}
+
+
+
+\begin{theorem}[Complexity]
+The Optimal Assignment Problem, as defined in Problem \ref{problem:optimal-assignment}, is NP-hard.
+\end{theorem}
+\begin{proof}
+The proof follows by reduction from the Multiple Knapsack Problem, which is known to be NP-hard. Given an instance of the Multiple Knapsack Problem, we can construct an equivalent instance of the Optimal Assignment Problem by mapping knapsacks to workers and items to jobs, with appropriate choices for $B_j$, $L_j$, $K_i$, and $S_i$.
+\end{proof}
+
+In what follows, we explore several variations of the problem above, together with their solutions (or approximations) as well as some analysis.
+
+\section{First Variation: Equal bids}
+
+Consider the case where $p_{i,j}=p=\beta'B_j$, $\forall i,j$. In this setting, Problem \ref{problem:optimal-assignment} reduces to
+
+\begin{problem}[Optimal Assignment with Equal Bids]\label{problem:equalBids-assignment}
+Find a binary assignment matrix $X = [x_{i,j}]_{M \times N}$, where $x_{i,j} \in \{0, 1\}$, that maximizes the utility function:
+\[
+U_{\text{protocol}}(X) = \sum_{i=1}^M \sum_{j=1}^N \left( rB_j - \alpha (1 - S_i)^2 \right) x_{i,j}, \quad \text{where } r:=\beta-\beta',
+\]
+subject to constraints \eqref{eq:capacity} through \eqref{eq:binary}.
+\end{problem}
+
+The previous equation has a very intuitive interpretation. The term on the left is maximized when we allocate jobs that pay the most. The term on the right —the regularization term— is maximized when we assign jobs to workers with a higher score $S_i$. This 
+\subsection{Naive Greedy Algorithm}
+
+\begin{algorithm}[H]
+\caption{\textsc{NaiveJobAssignment}}
+\label{alg:naive}
+\begin{algorithmic}[1]
+\Require{Sets of workers $\mathcal{W}=\{1,\dots,M\}$ and jobs $\mathcal{J}=\{1,\dots,N\}$; capacities $\{K_i\}_{i=1}^M$; loads $\{L_j\}_{j=1}^N$; budgets $\{B_j\}_{j=1}^N$; scores $\{S_i\}_{i=1}^M$ in $[0,1]$; constants $\beta>0$ and $\alpha\ge0$.}
+\Ensure{Assignment matrix $X = [x_{i,j}]$ with $x_{i,j}\in\{0,1\}$ maximizing $\sum_{i,j}\bigl(\beta B_j - \alpha(1 - S_i)^2\bigr)x_{i,j}$ in a greedy sense.}
+
+\State Sort jobs in descending order by budget, i.e.\ reorder $\mathcal{J}$ so that $B_1 \ge B_2 \ge \ldots \ge B_N$.
+\State Initialize $X \gets \mathbf{0}_{M\times N}$.
+\For{$j = 1 \to N$}
+    \For{$i = 1 \to M$}
+        \If{$K_i \ge L_j$} 
+            \State $x_{i,j} \gets 1$ \Comment{Assign job $j$ to the first feasible worker $i$.}
+            \State $K_i \gets K_i - L_j$ \Comment{Reduce worker $i$'s capacity.}
+            \State \textbf{break}
+        \EndIf
+    \EndFor
+\EndFor
+\State \Return $X$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{theorem}[Time Complexity of \textsc{NaiveJobAssignment}]
+\label{thm:naive-time}
+Algorithm~\ref{alg:naive} runs in $O(MN)$ time in the worst case.
+\end{theorem}
+\begin{proof}
+The outer loop over $N$ jobs, combined with the inner loop over $M$ workers, yields a total of $MN$ iterations in the worst case. Each iteration does a constant amount of work, thus $O(MN)$ overall.
+\end{proof}
+
+\begin{theorem}[Space Complexity of \textsc{NaiveJobAssignment}]
+The space complexity is $O(M + N)$ when storing only one assigned worker per job. If one stores the full $M\times N$ matrix $X$ explicitly, space is $O(MN)$.
+\end{theorem}
+
+\subsection{Capacity-Degrading Greedy Algorithm \textsc{CDA}}
+
+We now describe a more sophisticated greedy strategy that re-evaluates each worker's ``effective score'' as its capacity gets used up, aiming to avoid using up a high-score worker on low-value assignments.
+
+\begin{algorithm}[H]
+\caption{\textsc{CDA}}
+\label{alg:degrading}
+\begin{algorithmic}[1]
+\Require{Sets $\mathcal{W}$, $\mathcal{J}$; capacities $\{K_i\}$; loads $\{L_j\}$; budgets $\{B_j\}$; scores $\{S_i\}\in [0,1]$; constants $\beta>0$, $\alpha\ge0$, and a degradation exponent $\gamma>0$.}
+\Ensure{Greedy assignment matrix $X \in \{0,1\}^{M\times N}$.}
+
+\State Sort jobs in descending order by budget $B_j$. Let the resulting sequence be $j_1,j_2,\dots,j_N$.
+\State Sort workers by ascending capacity. For each worker $i$, record its original capacity $\mathit{OrigCap}_i = K_i$.
+\State Build a balanced data structure (e.g.\ a segment tree) over all workers $i=1,\dots,M$ capable of returning the \emph{highest effective score} in a given index range. 
+\State Define the \emph{effective score} of worker $i$ as
+  \[
+  \mathit{EffScore}_i \;=\; S_i \times \bigl(\tfrac{K_i}{\mathit{OrigCap}_i}\bigr)^\gamma.
+  \]
+  Initialize each worker's entry with $\mathit{EffScore}_i$.
+\State Initialize $X \gets \mathbf{0}_{M\times N}$.
+\For{$k = 1 \to N$}
+    \State $j \gets j_k$ \quad \Comment{the $k$-th highest-budget job}
+    \State Use \textbf{binary search} to find the first worker index (in capacity-sorted order) $i^*$ such that $K_{i^*}\ge L_j$. 
+    \If{no such $i^*$ exists}
+        \State \textbf{continue} \Comment{No feasible assignment for this job.}
+    \EndIf
+    \State From the data structure, query the worker with \emph{maximum} $\mathit{EffScore}_i$ in the range $[i^*, M]$ (i.e.\ all feasible workers).
+    \State Let $i^\star$ be that worker index. \quad \Comment{This maximizes $S_i \times (\tfrac{K_i}{\mathit{OrigCap}_i})^\gamma$.}
+    \If{$K_{i^\star} \ge L_j$}
+        \State $x_{i^\star,j} \gets 1$  \Comment{Assign job $j$ to worker $i^\star$.}
+        \State $K_{i^\star} \gets K_{i^\star} - L_j$  \Comment{Reduce capacity.}
+        \State $\mathit{EffScore}_{i^\star} \gets S_{i^\star}\times \bigl(\tfrac{K_{i^\star}}{\mathit{OrigCap}_{i^\star}}\bigr)^\gamma$ \Comment{Recompute effective score.}
+        \State \textbf{update} the data structure with the new $\mathit{EffScore}_{i^\star}$.
+    \EndIf
+\EndFor
+\State \Return $X$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{theorem}[Time Complexity of \textsc{CDA}]
+\label{thm:degrading-time}
+Algorithm~\ref{alg:degrading} runs in $O\bigl(M \log M + N \log N + N\log M\bigr)$ time.
+\end{theorem}
+\begin{proof}[Proof Sketch]
+\leavevmode
+\begin{itemize}
+\item Sorting the $M$ workers by capacity costs $O(M \log M)$.
+\item Sorting the $N$ jobs by $B_j$ costs $O(N \log N)$.
+\item The main loop over $N$ jobs has two sub-steps:
+  \begin{enumerate}
+    \item A \textbf{binary search} to locate the index of the first worker with capacity $\ge L_j$; this costs $O(\log M)$ per job.
+    \item A \textbf{range-max} query (and later update) in the data structure (e.g.\ a segment tree) also in $O(\log M)$ per operation.
+  \end{enumerate}
+  Hence each job requires $O(\log M)$ or $O(\log M + \log M)$ for a query and update, which is still $O(\log M)$ overall per job.
+
+Therefore, the total time is $O(M \log M + N \log N + N \log M)$, which is $O\bigl((M+N)\log(M+N)\bigr)$ in the typical case where $M$ and $N$ are of similar order.
+\end{itemize}
+\end{proof}
+
+\begin{theorem}[Space Complexity of \textsc{CDA}]
+\label{thm:degrading-space}
+The space complexity is $O(M+N)$ (sparse storage of the final assignment) plus $O(M)$ for the data structure, for a total of $O(M+N)$.
+\end{theorem}
+\begin{proof}
+Beyond storing job assignments in a sparse format (one worker ID per job), we need $O(M)$ memory for worker capacities and for the balanced search structure (e.g.\ segment tree of size $O(M)$). Sorting jobs and workers also requires $O(M+N)$ space. Thus the total space is $O(M+N)$.
+\end{proof}
+
+\paragraph{Remark.} While \textsc{CDA} aims to preserve high-capacity or high-score workers for more valuable assignments, both algorithms remain purely greedy. Due to the NP-hardness of the problem, neither approach can guarantee a globally optimal solution in the worst case. Nevertheless, the second method often outperforms the naive approach in practice, especially for large-scale instances or whenever partial usage of high-score workers can otherwise harm future assignments.
+
+\subsection{Numerical Comparison}
+
+
+We evaluate the two proposed greedy algorithms---(\emph{i}) the Naive approach (Algorithm~\ref{alg:naive}) and (\emph{ii}) the Capacity-Degrading approach (Algorithm~\ref{alg:degrading})---by generating synthetic instances of varying size and measuring both their runtimes and the resulting objective values. The objective is 
+\[
+  \sum_{\substack{i=1..M \\ j=1..N}} 
+  \Bigl(\beta B_j \;-\;\alpha\bigl(1-S_i\bigr)^2\Bigr)\,x_{i,j},
+\]
+where $x_{i,j}\in\{0,1\}$ denotes the assignment of job $j$ to worker $i$, $\beta>0$ is a budget scaling factor, and $\alpha\ge0$ is a score penalty weight.
+
+We sample $M$ workers and $N$ jobs uniformly at random as follows:
+\begin{itemize}
+    \item Each job $j$ has 
+    \begin{enumerate}
+        \item a budget $B_j$ drawn from a uniform real distribution in $[100, 500]$, and 
+        \item a load $L_j$ sampled uniformly at random from the integer set $\{5, 6, \dots, 100\}$.
+    \end{enumerate}
+    \item Each worker $i$ has 
+    \begin{enumerate}
+        \item a capacity $K_i$ sampled uniformly at random from $\{50, 51, \dots, 300\}$, and 
+        \item a score $S_i$ drawn from a uniform real distribution in $[0, 1]$.
+    \end{enumerate}
+\end{itemize}
+
+Unless otherwise stated, we fix $\beta=1.0$ and $\alpha=0.5$. The exponent $\gamma$ in the capacity-degrading approach is set to $\gamma=1.0$, so a worker's effective score $S_i\cdot\bigl(\tfrac{K_i}{K_i^{(\mathrm{orig})}}\bigr)^\gamma$ decays proportionally with its remaining capacity.
+
+To study algorithmic scalability, we vary $M$ and $N$ from $10$ up to $10{,}000$, setting $M=N$ for each experiment. This yields problem sizes $$\{(10,10), (100,100), (1000,1000), (10000,10000)\}$$, covering both small and large instances.
+
+For each instance size, we record the wall-clock time as well as the value of the objective function. Results are shown in Figure \ref{fig:complexity_CDA_Greedy}. In this setting, As we can see, both algorithms are able to complete the assignment rather quickly -- under one second for the case with the largest explored load. 
+
+\begin{figure}
+    \centering
+    \input{CDA_vs_Greedy}
+    \caption{Complexity of CDA vs Greedy}
+    \label{fig:complexity_CDA_Greedy}
+\end{figure}
+\end{document}
